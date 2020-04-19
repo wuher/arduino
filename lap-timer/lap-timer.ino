@@ -1,38 +1,30 @@
-// liquid start
-#include <LiquidCrystal.h>
-LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
-const int switchPin = 6;
-int switchState = 0;
-int prevSwitchState = 0;
-int reply;
-// liquid end
+// == rf24 start
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
 
-// adafruit start
+//create an RF24 object
+RF24 radio(9, 8);  // CE, CSN
+
+//address through which two modules communicate.
+const byte address[6] = "00001";
+// == rf24 end
+
+// == adafruit start
 #include "Adafruit_LEDBackpack.h"
 #include "Adafruit_GFX.h"
 Adafruit_7segment adafruit = Adafruit_7segment();
-// adafruit end
+// == adafruit end
 
 const int GATE_PIN = 7;
 const int GATE_CLEAR = 1;
 const int MIN_LAPTIME = 1;
 
 void setup() {
-  // put your setup code here, to run once:
   Serial.begin(9600);
-  Serial.println("Hello, Setup!");
-  // pinMode(A1, INPUT_PULLUP);
   pinMode(GATE_PIN, INPUT_PULLUP);
 
-  // liquid start
-  lcd.begin(16, 2);
-  pinMode(switchPin, INPUT);
-  lcd.print("Ask the");
-  lcd.setCursor(0, 1);
-  lcd.print("Crystal Ball!");
-  // liquid end
-
-  // adafruit start
+  // == adafruit start
   adafruit.begin(0x70);
   //adafruit.drawColon(true);
   //adafruit.print(0, DEC);
@@ -45,7 +37,17 @@ void setup() {
   adafruit.writeDigitRaw(3, 0b01011110);
   adafruit.writeDigitRaw(4, 0b00000110);
   adafruit.writeDisplay();
+  // == adafruit end
+
+  // == rf24 start
+  radio.begin();
+  // set the address
+  radio.openWritingPipe(address);
+  // set module as transmitter
+  radio.stopListening();
+  // == rf24 end
   
+  Serial.println("setup done");
 }
 
 double runtime(unsigned long starttime) {
@@ -53,6 +55,17 @@ double runtime(unsigned long starttime) {
 }
 
 void loop() {
+
+  // == rf24 start
+
+  const char text[] = "Hello World";
+  Serial.print("transmitting... ");
+  Serial.println(radio.write(&text, sizeof(text)));
+  Serial.print(text);
+  Serial.println(" transmitted");
+
+  // == rf24 end
+  
   int reading = GATE_CLEAR;
   
   // wait for first interrupt
@@ -73,18 +86,12 @@ void loop() {
 
   // prevent false starts
   delay(500);
-
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("RUN!");
   
   reading = digitalRead(GATE_PIN);
 
   // wait for gate interrupt
   while (digitalRead(GATE_PIN) == GATE_CLEAR) {
     double t = runtime(starttime);
-    lcd.setCursor(0, 1);
-    lcd.print(t);
     adafruit.print(int(t * 100), DEC);
     adafruit.drawColon(true);
     adafruit.writeDisplay();
@@ -97,12 +104,6 @@ void loop() {
   Serial.print("Lap time: ");
   Serial.print(laptime);
   Serial.println("s.");
-
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Time:");
-  lcd.setCursor(0, 1);
-  lcd.print(laptime);
 
   delay(1000);
 }
