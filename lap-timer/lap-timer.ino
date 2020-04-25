@@ -69,6 +69,7 @@ void setupComm() {
 void setup() {
   Serial.begin(9600);
 
+  pinMode(3, OUTPUT);
   // beam sensor
   pinMode(GATE_PIN, INPUT_PULLUP);
   // display
@@ -88,9 +89,19 @@ double runtime(unsigned long starttime) {
 
 // -- program globals -------------
 State state = RACE_OVER;
-unsigned long rxLastPing = 0;
+unsigned long rxLastPing = millis();
 unsigned long startTime = 0;
 // --------------------------------
+
+void checkPodConnection(PodMsg msg) {
+  unsigned long now = millis();
+  if (msg == POD_HEARTBEAT) {
+    digitalWrite(3, LOW);
+    rxLastPing = now;
+  } else if (now - rxLastPing > 3000) {
+    digitalWrite(3, HIGH);
+  }
+}
 
 /**
  * Read beam senor / gate state.
@@ -107,7 +118,7 @@ PodMsg checkMessages() {
     char text[32] = "";
     radio.read(&text, sizeof(text));
 
-    Serial.print('RX: ');
+    Serial.print("RX: ");
     Serial.println(text);
 
     if (strcmp(text, "interrupt") == 0) {
@@ -176,6 +187,7 @@ State takeActionWhenRaceOn(GateState gatestate, PodMsg podmsg) {
     Serial.print("Lap time: ");
     Serial.print(laptime);
     Serial.println("s.");
+    digitalWrite(3, HIGH);
     delay(1000);
     return RACE_OVER;
   } else {
@@ -199,7 +211,7 @@ State takeAction(State currstate, GateState gatestate, PodMsg podmsg) {
   } else if (currstate == RACE_ON) {
     return takeActionWhenRaceOn(gatestate, podmsg);
   } else {
-    Serial.println('ERROR: unknown state');
+    Serial.println("ERROR: unknown state");
   }
 }
 
@@ -214,5 +226,6 @@ void loop() {
   // take action based on current state, gate state and pod message
   state = takeAction(state, gate, msg);
   // slight delay before next loop
+  checkPodConnection(msg);
   delay(10);
 }

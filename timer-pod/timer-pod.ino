@@ -16,8 +16,15 @@ double runtime(unsigned long starttime) {
   return (millis() - starttime) / 1000.00;
 }
 
+void sendPing() {
+  const char text[] = "ping";
+  radio.write(&text, sizeof(text));
+  Serial.print(text);
+  Serial.println(" transmitted");
+}
+
 void sendMessage() {
-  const char text[] = "interrupt";
+  const char text[] = "gate";
   Serial.println("transmitting...");
   radio.write(&text, sizeof(text));
   Serial.print(text);
@@ -40,9 +47,19 @@ void setup() {
   Serial.println("setup done");
 }
 
+unsigned long lastping = millis();
+void maybeSendPing() {
+  unsigned long now = millis();
+  if (now - lastping > 1000) {
+    sendPing();
+    lastping = millis();
+  }
+}
+
 void loop() {
   // wait for first interrupt
   while (digitalRead(GATE_PIN) == GATE_CLEAR) {
+    maybeSendPing();
     delay(10);
   }
 
