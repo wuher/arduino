@@ -1,6 +1,12 @@
 /*
  * File name:    lap-timer.ino
  * File Created: 2019-01-19T21:00:34
+ *
+ * Arduino lap timer that supports second gate wirelessly.
+ *
+ * State diagram:
+ *
+ *    https://www.lucidchart.com/invitations/accept/1b5df8e3-d3ed-4f34-a198-4cc613daef91
  */
 
 #include "timertypes.h"
