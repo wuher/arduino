@@ -1,4 +1,11 @@
-// == rf24 start
+/*
+ * File name:    lap-timer.ino
+ * File Created: 2019-01-19T21:00:34
+ */
+
+#include "timertypes.h"
+
+// == RF24 start
 #include <SPI.h>
 #include <nRF24L01.h>
 #include <RF24.h>
@@ -8,7 +15,7 @@ RF24 radio(9, 8);  // CE, CSN
 
 //address through which two modules communicate.
 const byte address[6] = "00001";
-// == rf24 end
+// == RF24 end
 
 // == adafruit start
 #include "Adafruit_LEDBackpack.h"
@@ -20,11 +27,10 @@ const int GATE_PIN = 7;
 const int GATE_CLEAR = 1;
 const int MIN_LAPTIME = 1;
 
-void setup() {
-  Serial.begin(9600);
-  pinMode(GATE_PIN, INPUT_PULLUP);
-
-  // == adafruit start
+/**
+ * Set up adafruit display
+ */
+void setupAdafruit() {
   adafruit.begin(0x70);
   //adafruit.drawColon(true);
   //adafruit.print(0, DEC);
@@ -37,73 +43,170 @@ void setup() {
   adafruit.writeDigitRaw(3, 0b01011110);
   adafruit.writeDigitRaw(4, 0b00000110);
   adafruit.writeDisplay();
-  // == adafruit end
+}
 
-  // == rf24 start
+/**
+ * Set up RF24 communication as a receiver.
+ */
+void setupComm() {
   radio.begin();
   // set the address
-  radio.openWritingPipe(address);
-  // set module as transmitter
-  radio.stopListening();
-  // == rf24 end
-  
+  radio.openReadingPipe(0, address);
+  radio.setPALevel(RF24_PA_MIN);
+  // set module as receiver
+  radio.startListening();
+}
+
+/**
+ * Setup Arduino.
+ */
+void setup() {
+  Serial.begin(9600);
+
+  // beam sensor
+  pinMode(GATE_PIN, INPUT_PULLUP);
+  // display
+  setupAdafruit();
+  // comm
+  setupComm();
+
   Serial.println("setup done");
 }
 
+/**
+ * Calculate runtime based on the given start time.
+ */
 double runtime(unsigned long starttime) {
   return (millis() - starttime) / 1000.00;
 }
 
-void loop() {
+// -- program globals -------------
+State state = RACE_OVER;
+unsigned long rxLastPing = 0;
+unsigned long startTime = 0;
+// --------------------------------
 
-  // == rf24 start
+/**
+ * Read beam senor / gate state.
+ */
+GateState getGateStatus() {
+  return digitalRead(GATE_PIN) == 1 ? GATE_OPEN : GATE_CLOSED;
+}
 
-  const char text[] = "Hello World";
-  Serial.print("transmitting... ");
-  Serial.println(radio.write(&text, sizeof(text)));
-  Serial.print(text);
-  Serial.println(" transmitted");
+/**
+ * Check if pod has sent any messages.
+ */
+PodMsg checkMessages() {
+  if (radio.available()) {
+    char text[32] = "";
+    radio.read(&text, sizeof(text));
 
-  // == rf24 end
-  
-  int reading = GATE_CLEAR;
-  
-  // wait for first interrupt
-  while (digitalRead(GATE_PIN) == GATE_CLEAR) {
-    delay(10);
+    Serial.print('RX: ');
+    Serial.println(text);
+
+    if (strcmp(text, "interrupt") == 0) {
+      return POD_GATE;
+    } else if (strcmp(text, "ping") == 0) {
+      return POD_HEARTBEAT;
+    } else {
+      return POD_NOTHING;
+    }
+  } else {
+    return POD_NOTHING;
   }
+}
 
-  // wait until gate clear again
-  while (digitalRead(GATE_PIN) != GATE_CLEAR) {
-    delay(10);
-  }
-
-  // begin race
-
-  // start counting time
-  unsigned long starttime = millis();
-  Serial.println("Begin race!  ");
-
+/**
+ * Starts the timer.
+ *
+ * Call this when transferring to RACE_ON state.
+ */
+void raceStarted() {
+  startTime = millis();
+  Serial.println("Begin race!");
   // prevent false starts
   delay(500);
-  
-  reading = digitalRead(GATE_PIN);
+}
 
-  // wait for gate interrupt
-  while (digitalRead(GATE_PIN) == GATE_CLEAR) {
-    double t = runtime(starttime);
+/**
+ * State handler for RACE_OVER state.
+ */
+State takeActionWhenRaceOver(GateState gatestate, PodMsg podmsg) {
+  if (gatestate == GATE_CLOSED) {
+    Serial.println("** RACE_OVER -> RACE_START");
+    return RACE_START;
+  }
+
+  if (podmsg == POD_GATE) {
+    Serial.println("** RACE_OVER -> RACE_ON");
+    raceStarted();
+    return RACE_ON;
+  }
+
+  return RACE_OVER;
+}
+
+/**
+ * State handler for RACE_START state.
+ */
+State takeActionWhenRaceStart(GateState gatestate, PodMsg podmsg) {
+  if (gatestate == GATE_OPEN) {
+    Serial.println("** RACE_START -> RACE_ON");
+    raceStarted();
+    return RACE_ON;
+  }
+
+  return RACE_START;
+}
+
+/**
+ * State handler for RACE_ON state.
+ */
+State takeActionWhenRaceOn(GateState gatestate, PodMsg podmsg) {
+  if (gatestate == GATE_CLOSED || podmsg == POD_GATE) {
+    Serial.println("** RACE_ON -> RACE_OVER");
+    Serial.println(millis() - startTime);
+    float laptime = runtime(startTime);
+    Serial.print("Lap time: ");
+    Serial.print(laptime);
+    Serial.println("s.");
+    delay(1000);
+    return RACE_OVER;
+  } else {
+    double t = runtime(startTime);
     adafruit.print(int(t * 100), DEC);
     adafruit.drawColon(true);
     adafruit.writeDisplay();
-    delay(10);
   }
 
-  Serial.println(millis() - starttime);
+  return RACE_ON;
+}
 
-  float laptime = runtime(starttime);
-  Serial.print("Lap time: ");
-  Serial.print(laptime);
-  Serial.println("s.");
+/**
+ * Just calls appropriate state handler based on current state.
+ */
+State takeAction(State currstate, GateState gatestate, PodMsg podmsg) {
+  if (currstate == RACE_OVER) {
+    return takeActionWhenRaceOver(gatestate, podmsg);
+  } else if (currstate == RACE_START) {
+    return takeActionWhenRaceStart(gatestate, podmsg);
+  } else if (currstate == RACE_ON) {
+    return takeActionWhenRaceOn(gatestate, podmsg);
+  } else {
+    Serial.println('ERROR: unknown state');
+  }
+}
 
-  delay(1000);
+/**
+ * The main loop.
+ */
+void loop() {
+  // read gate state
+  GateState gate = getGateStatus();
+  // check messages
+  PodMsg msg = checkMessages();
+  // take action based on current state, gate state and pod message
+  state = takeAction(state, gate, msg);
+  // slight delay before next loop
+  delay(10);
 }
