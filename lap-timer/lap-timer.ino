@@ -121,7 +121,7 @@ PodMsg checkMessages() {
     Serial.print("RX: ");
     Serial.println(text);
 
-    if (strcmp(text, "interrupt") == 0) {
+    if (strcmp(text, "gate") == 0) {
       return POD_GATE;
     } else if (strcmp(text, "ping") == 0) {
       return POD_HEARTBEAT;
