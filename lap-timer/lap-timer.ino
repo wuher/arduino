@@ -29,9 +29,8 @@ const byte address[6] = "00001";
 Adafruit_7segment adafruit = Adafruit_7segment();
 // == adafruit end
 
+const int LED_PIN = 3;
 const int GATE_PIN = 7;
-const int GATE_CLEAR = 1;
-const int MIN_LAPTIME = 1;
 
 /**
  * Set up adafruit display
@@ -69,7 +68,8 @@ void setupComm() {
 void setup() {
   Serial.begin(9600);
 
-  pinMode(3, OUTPUT);
+  // led output
+  pinMode(LED_PIN, OUTPUT);
   // beam sensor
   pinMode(GATE_PIN, INPUT_PULLUP);
   // display
